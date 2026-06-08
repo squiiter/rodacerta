@@ -118,6 +118,21 @@ function formatNumericInput(value, decimals = 2) {
   return integer;
 }
 
+function formatIntegerInput(value) {
+  const digits = String(value || "").replace(/\D/g, "");
+  if (!digits) return "";
+  return new Intl.NumberFormat("pt-BR").format(Number(digits));
+}
+
+function formatCurrencyInput(value) {
+  const digits = String(value || "").replace(/\D/g, "");
+  if (!digits) return "";
+  return new Intl.NumberFormat("pt-BR", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2
+  }).format(Number(digits) / 100);
+}
+
 function App() {
   const [activeView, setActiveView] = useState("dashboard");
   const [shifts, setShifts] = useState([]);
@@ -227,13 +242,13 @@ function App() {
   function editShift(shift) {
     setDraft({
       ...shift,
-      kmStart: formatNumber(shift.kmStart, 1),
-      kmEnd: formatNumber(shift.kmEnd, 1),
+      kmStart: formatNumber(shift.kmStart, 0),
+      kmEnd: formatNumber(shift.kmEnd, 0),
       fuelLiters: formatNumber(shift.fuelLiters, 2),
-      fuelCost: formatNumber(shift.fuelCost, 2),
-      foodCost: formatNumber(shift.foodCost, 2),
-      extraCost: formatNumber(shift.extraCost, 2),
-      apps: shift.apps.map((app) => ({ ...app, amount: formatNumber(app.amount, 2) }))
+      fuelCost: formatNumber(shift.fuelCost, 2, true),
+      foodCost: formatNumber(shift.foodCost, 2, true),
+      extraCost: formatNumber(shift.extraCost, 2, true),
+      apps: shift.apps.map((app) => ({ ...app, amount: formatNumber(app.amount, 2, true) }))
     });
     setActiveView("shift");
     notify("Expediente carregado para edição.");
@@ -536,12 +551,12 @@ function ShiftForm({ draft, settings, preview, onSubmit, onChange, onAppChange, 
 
         <div className="form-grid">
           <Field label="Data" type="date" value={draft.date} onChange={(value) => onChange("date", value)} />
-          <NumericField label="KM inicial" value={draft.kmStart} decimals={1} suffix="km" onChange={(value) => onChange("kmStart", value)} />
-          <NumericField label="KM final" value={draft.kmEnd} decimals={1} suffix="km" onChange={(value) => onChange("kmEnd", value)} />
-          <NumericField label="Litros abastecidos" value={draft.fuelLiters} decimals={2} suffix="L" onChange={(value) => onChange("fuelLiters", value)} />
-          <NumericField label="Valor do combustível" value={draft.fuelCost} decimals={2} prefix="R$" fixedDecimals onChange={(value) => onChange("fuelCost", value)} />
-          <NumericField label="Alimentação fora" value={draft.foodCost} decimals={2} prefix="R$" fixedDecimals onChange={(value) => onChange("foodCost", value)} />
-          <NumericField label="Gasto extra" value={draft.extraCost} decimals={2} prefix="R$" fixedDecimals onChange={(value) => onChange("extraCost", value)} />
+          <NumericField label="KM inicial" value={draft.kmStart} mode="integer" suffix="km" onChange={(value) => onChange("kmStart", value)} />
+          <NumericField label="KM final" value={draft.kmEnd} mode="integer" suffix="km" onChange={(value) => onChange("kmEnd", value)} />
+          <NumericField label="Litros abastecidos" value={draft.fuelLiters} mode="decimal" decimals={2} suffix="L" onChange={(value) => onChange("fuelLiters", value)} />
+          <NumericField label="Valor do combustível" value={draft.fuelCost} mode="currency" prefix="R$" onChange={(value) => onChange("fuelCost", value)} />
+          <NumericField label="Alimentação fora" value={draft.foodCost} mode="currency" prefix="R$" onChange={(value) => onChange("foodCost", value)} />
+          <NumericField label="Gasto extra" value={draft.extraCost} mode="currency" prefix="R$" onChange={(value) => onChange("extraCost", value)} />
           <Field label="Descrição do extra" value={draft.extraDescription} onChange={(value) => onChange("extraDescription", value)} placeholder="Pedágio, multa, lavagem..." />
         </div>
 
@@ -553,7 +568,7 @@ function ShiftForm({ draft, settings, preview, onSubmit, onChange, onAppChange, 
           {draft.apps.map((app, index) => (
             <div className="app-row" key={`${index}-${app.name}`}>
               <Field label="App" value={app.name} onChange={(value) => onAppChange(index, "name", value)} placeholder="Uber, 99, Lalamove..." />
-              <NumericField label="Valor" value={app.amount} decimals={2} prefix="R$" fixedDecimals onChange={(value) => onAppChange(index, "amount", value)} />
+              <NumericField label="Valor" value={app.amount} mode="currency" prefix="R$" onChange={(value) => onAppChange(index, "amount", value)} />
               <button className="danger-icon" type="button" onClick={() => onRemoveApp(index)} aria-label="Remover app"><Trash2 size={18} /></button>
             </div>
           ))}
@@ -598,7 +613,19 @@ function Field({ label, value, onChange, type = "text", placeholder = "" }) {
   );
 }
 
-function NumericField({ label, value, onChange, decimals = 2, prefix = "", suffix = "", fixedDecimals = false }) {
+function NumericField({ label, value, onChange, mode = "decimal", decimals = 2, prefix = "", suffix = "" }) {
+  function formatValue(nextValue) {
+    if (mode === "currency") return formatCurrencyInput(nextValue);
+    if (mode === "integer") return formatIntegerInput(nextValue);
+    return formatNumericInput(nextValue, decimals);
+  }
+
+  function formatBlurValue(nextValue) {
+    if (mode === "currency") return formatCurrencyInput(nextValue);
+    if (mode === "integer") return formatIntegerInput(nextValue);
+    return formatNumber(nextValue, decimals);
+  }
+
   return (
     <label className="field">
       <span>{label}</span>
@@ -609,8 +636,9 @@ function NumericField({ label, value, onChange, decimals = 2, prefix = "", suffi
           inputMode="decimal"
           value={value}
           placeholder="0"
-          onChange={(event) => onChange(formatNumericInput(event.target.value, decimals))}
-          onBlur={(event) => onChange(formatNumber(event.target.value, decimals, fixedDecimals))}
+          onChange={(event) => onChange(formatValue(event.target.value))}
+          onBlur={(event) => onChange(formatBlurValue(event.target.value))}
+          onFocus={(event) => event.target.select()}
         />
         {suffix && <span>{suffix}</span>}
       </div>
@@ -683,12 +711,12 @@ function SettingsView({ settings, onChange, onSubmit }) {
       <section className="panel">
         <h2>Parâmetros do veículo</h2>
         <div className="form-grid">
-          <NumericField label="Preço médio do combustível" value={settings.fuelPrice} decimals={2} prefix="R$" fixedDecimals onChange={(value) => onChange("fuelPrice", value)} />
-          <NumericField label="Consumo esperado" value={settings.targetConsumption} decimals={1} suffix="km/L" onChange={(value) => onChange("targetConsumption", value)} />
-          <NumericField label="Seguro mensal" value={settings.insuranceMonthly} decimals={2} prefix="R$" fixedDecimals onChange={(value) => onChange("insuranceMonthly", value)} />
-          <NumericField label="Manutenção por km" value={settings.maintenancePerKm} decimals={2} prefix="R$" fixedDecimals onChange={(value) => onChange("maintenancePerKm", value)} />
-          <NumericField label="Lavagem/limpeza mensal" value={settings.cleaningMonthly} decimals={2} prefix="R$" fixedDecimals onChange={(value) => onChange("cleaningMonthly", value)} />
-          <NumericField label="Outros custos mensais" value={settings.otherMonthly} decimals={2} prefix="R$" fixedDecimals onChange={(value) => onChange("otherMonthly", value)} />
+          <NumericField label="Preço médio do combustível" value={settings.fuelPrice} mode="currency" prefix="R$" onChange={(value) => onChange("fuelPrice", value)} />
+          <NumericField label="Consumo esperado" value={settings.targetConsumption} mode="decimal" decimals={1} suffix="km/L" onChange={(value) => onChange("targetConsumption", value)} />
+          <NumericField label="Seguro mensal" value={settings.insuranceMonthly} mode="currency" prefix="R$" onChange={(value) => onChange("insuranceMonthly", value)} />
+          <NumericField label="Manutenção por km" value={settings.maintenancePerKm} mode="currency" prefix="R$" onChange={(value) => onChange("maintenancePerKm", value)} />
+          <NumericField label="Lavagem/limpeza mensal" value={settings.cleaningMonthly} mode="currency" prefix="R$" onChange={(value) => onChange("cleaningMonthly", value)} />
+          <NumericField label="Outros custos mensais" value={settings.otherMonthly} mode="currency" prefix="R$" onChange={(value) => onChange("otherMonthly", value)} />
         </div>
         <div className="form-actions">
           <button className="primary-btn" type="submit">Salvar custos fixos</button>
