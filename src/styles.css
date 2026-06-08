@@ -472,6 +472,45 @@ textarea:focus {
   box-shadow: 0 0 0 4px rgba(24, 167, 127, 0.13);
 }
 
+.numeric-input {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  min-height: 44px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.92);
+  transition: border-color 160ms ease, box-shadow 160ms ease;
+}
+
+.numeric-input:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 4px rgba(24, 167, 127, 0.13);
+}
+
+.numeric-input span {
+  padding: 0 12px;
+  color: var(--muted);
+  font-size: 0.86rem;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.numeric-input input {
+  min-height: 42px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  text-align: right;
+}
+
+.numeric-input input:focus {
+  border-color: transparent;
+  box-shadow: none;
+}
+
 .app-rows {
   display: grid;
   gap: 10px;

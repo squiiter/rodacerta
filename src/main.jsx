@@ -72,14 +72,57 @@ function emptyShift() {
   };
 }
 
+function formatSettings(settings) {
+  return {
+    fuelPrice: formatNumber(settings.fuelPrice, 2, true),
+    targetConsumption: formatNumber(settings.targetConsumption, 1),
+    insuranceMonthly: formatNumber(settings.insuranceMonthly, 2, true),
+    maintenancePerKm: formatNumber(settings.maintenancePerKm, 2, true),
+    cleaningMonthly: formatNumber(settings.cleaningMonthly, 2, true),
+    otherMonthly: formatNumber(settings.otherMonthly, 2, true)
+  };
+}
+
 function numberValue(value) {
-  return Number.parseFloat(value || "0") || 0;
+  if (typeof value === "number") return Number.isFinite(value) ? value : 0;
+  const normalized = String(value || "")
+    .replace(/[^\d,.-]/g, "")
+    .replace(/\./g, "")
+    .replace(",", ".");
+  return Number.parseFloat(normalized || "0") || 0;
+}
+
+function formatNumber(value, decimals = 2, fixedDecimals = false) {
+  const number = numberValue(value);
+  if (!number) return "";
+  return new Intl.NumberFormat("pt-BR", {
+    minimumFractionDigits: fixedDecimals ? decimals : 0,
+    maximumFractionDigits: decimals
+  }).format(number);
+}
+
+function formatNumericInput(value, decimals = 2) {
+  const clean = String(value || "").replace(/[^\d,.]/g, "");
+  if (!clean) return "";
+
+  const lastComma = clean.lastIndexOf(",");
+  const lastDot = clean.lastIndexOf(".");
+  const decimalIndex = Math.max(lastComma, lastDot);
+  const hasDecimal = decimalIndex >= 0;
+  const integerDigits = (hasDecimal ? clean.slice(0, decimalIndex) : clean).replace(/\D/g, "");
+  const decimalDigits = hasDecimal ? clean.slice(decimalIndex + 1).replace(/\D/g, "").slice(0, decimals) : "";
+  const integer = new Intl.NumberFormat("pt-BR").format(Number(integerDigits || "0"));
+
+  if (hasDecimal && decimals > 0 && /[,.]$/.test(clean)) return `${integer},`;
+  if (decimalDigits) return `${integer},${decimalDigits}`;
+  return integer;
 }
 
 function App() {
   const [activeView, setActiveView] = useState("dashboard");
   const [shifts, setShifts] = useState([]);
   const [settings, setSettingsState] = useState(DEFAULT_SETTINGS);
+  const [settingsDraft, setSettingsDraft] = useState(() => formatSettings(DEFAULT_SETTINGS));
   const [draft, setDraft] = useState(emptyShift);
   const [toast, setToast] = useState("");
   const [search, setSearch] = useState("");
@@ -107,6 +150,7 @@ function App() {
       .then((data) => {
         setShifts(data.shifts);
         setSettingsState(data.settings);
+        setSettingsDraft(formatSettings(data.settings));
         setReady(true);
       })
       .catch(() => notify("Não foi possível iniciar o banco local."));
@@ -122,6 +166,7 @@ function App() {
     const data = await loadData();
     setShifts(data.shifts);
     setSettingsState(data.settings);
+    setSettingsDraft(formatSettings(data.settings));
   }
 
   async function handleSaveShift(event) {
@@ -144,7 +189,15 @@ function App() {
 
   async function handleSaveSettings(event) {
     event.preventDefault();
-    await saveSettings(settings);
+    const nextSettings = {
+      fuelPrice: numberValue(settingsDraft.fuelPrice),
+      targetConsumption: numberValue(settingsDraft.targetConsumption),
+      insuranceMonthly: numberValue(settingsDraft.insuranceMonthly),
+      maintenancePerKm: numberValue(settingsDraft.maintenancePerKm),
+      cleaningMonthly: numberValue(settingsDraft.cleaningMonthly),
+      otherMonthly: numberValue(settingsDraft.otherMonthly)
+    };
+    await saveSettings(nextSettings);
     await refresh();
     notify("Custos fixos salvos.");
   }
@@ -174,13 +227,13 @@ function App() {
   function editShift(shift) {
     setDraft({
       ...shift,
-      kmStart: String(shift.kmStart),
-      kmEnd: String(shift.kmEnd),
-      fuelLiters: shift.fuelLiters ? String(shift.fuelLiters) : "",
-      fuelCost: shift.fuelCost ? String(shift.fuelCost) : "",
-      foodCost: shift.foodCost ? String(shift.foodCost) : "",
-      extraCost: shift.extraCost ? String(shift.extraCost) : "",
-      apps: shift.apps.map((app) => ({ ...app, amount: String(app.amount || "") }))
+      kmStart: formatNumber(shift.kmStart, 1),
+      kmEnd: formatNumber(shift.kmEnd, 1),
+      fuelLiters: formatNumber(shift.fuelLiters, 2),
+      fuelCost: formatNumber(shift.fuelCost, 2),
+      foodCost: formatNumber(shift.foodCost, 2),
+      extraCost: formatNumber(shift.extraCost, 2),
+      apps: shift.apps.map((app) => ({ ...app, amount: formatNumber(app.amount, 2) }))
     });
     setActiveView("shift");
     notify("Expediente carregado para edição.");
@@ -216,7 +269,7 @@ function App() {
     try {
       const backup = JSON.parse(await file.text());
       if (!backup || !Array.isArray(backup.shifts) || !backup.settings) {
-        throw new Error("Arquivo invalido.");
+        throw new Error("Arquivo inválido.");
       }
       await replaceAll(backup);
       await refresh();
@@ -258,7 +311,7 @@ function App() {
       </header>
 
       <main className="app-shell">
-        <nav className="tabs" aria-label="Areas do aplicativo">
+        <nav className="tabs" aria-label="Áreas do aplicativo">
           <Tab active={activeView === "dashboard"} icon={LayoutDashboard} label="Dashboard" onClick={() => setActiveView("dashboard")} />
           <Tab active={activeView === "shift"} icon={CalendarDays} label="Expediente" onClick={() => setActiveView("shift")} />
           <Tab active={activeView === "history"} icon={ReceiptText} label="Histórico" onClick={() => setActiveView("history")} />
@@ -308,8 +361,8 @@ function App() {
 
         {activeView === "settings" && (
           <SettingsView
-            settings={settings}
-            onChange={(field, value) => setSettingsState((current) => ({ ...current, [field]: numberValue(value) }))}
+            settings={settingsDraft}
+            onChange={(field, value) => setSettingsDraft((current) => ({ ...current, [field]: value }))}
             onSubmit={handleSaveSettings}
           />
         )}
@@ -477,18 +530,18 @@ function ShiftForm({ draft, settings, preview, onSubmit, onChange, onAppChange, 
     <form className="work-grid" onSubmit={onSubmit}>
       <section className="panel form-panel">
         <div className="panel-head">
-          <h2>Lancamento do dia</h2>
+          <h2>Lançamento do dia</h2>
           <button className="ghost-btn" type="button" onClick={onReset}>Limpar</button>
         </div>
 
         <div className="form-grid">
           <Field label="Data" type="date" value={draft.date} onChange={(value) => onChange("date", value)} />
-          <Field label="KM inicial" type="number" value={draft.kmStart} onChange={(value) => onChange("kmStart", value)} />
-          <Field label="KM final" type="number" value={draft.kmEnd} onChange={(value) => onChange("kmEnd", value)} />
-          <Field label="Litros abastecidos" type="number" value={draft.fuelLiters} onChange={(value) => onChange("fuelLiters", value)} />
-          <Field label="Valor do combustível" type="number" value={draft.fuelCost} onChange={(value) => onChange("fuelCost", value)} />
-          <Field label="Alimentação fora" type="number" value={draft.foodCost} onChange={(value) => onChange("foodCost", value)} />
-          <Field label="Gasto extra" type="number" value={draft.extraCost} onChange={(value) => onChange("extraCost", value)} />
+          <NumericField label="KM inicial" value={draft.kmStart} decimals={1} suffix="km" onChange={(value) => onChange("kmStart", value)} />
+          <NumericField label="KM final" value={draft.kmEnd} decimals={1} suffix="km" onChange={(value) => onChange("kmEnd", value)} />
+          <NumericField label="Litros abastecidos" value={draft.fuelLiters} decimals={2} suffix="L" onChange={(value) => onChange("fuelLiters", value)} />
+          <NumericField label="Valor do combustível" value={draft.fuelCost} decimals={2} prefix="R$" fixedDecimals onChange={(value) => onChange("fuelCost", value)} />
+          <NumericField label="Alimentação fora" value={draft.foodCost} decimals={2} prefix="R$" fixedDecimals onChange={(value) => onChange("foodCost", value)} />
+          <NumericField label="Gasto extra" value={draft.extraCost} decimals={2} prefix="R$" fixedDecimals onChange={(value) => onChange("extraCost", value)} />
           <Field label="Descrição do extra" value={draft.extraDescription} onChange={(value) => onChange("extraDescription", value)} placeholder="Pedágio, multa, lavagem..." />
         </div>
 
@@ -500,14 +553,14 @@ function ShiftForm({ draft, settings, preview, onSubmit, onChange, onAppChange, 
           {draft.apps.map((app, index) => (
             <div className="app-row" key={`${index}-${app.name}`}>
               <Field label="App" value={app.name} onChange={(value) => onAppChange(index, "name", value)} placeholder="Uber, 99, Lalamove..." />
-              <Field label="Valor" type="number" value={app.amount} onChange={(value) => onAppChange(index, "amount", value)} />
+              <NumericField label="Valor" value={app.amount} decimals={2} prefix="R$" fixedDecimals onChange={(value) => onAppChange(index, "amount", value)} />
               <button className="danger-icon" type="button" onClick={() => onRemoveApp(index)} aria-label="Remover app"><Trash2 size={18} /></button>
             </div>
           ))}
         </div>
 
         <label className="field full">
-          <span>Observacoes</span>
+          <span>Observações</span>
           <textarea value={draft.notes} onChange={(event) => onChange("notes", event.target.value)} rows="3" placeholder="Chuva, promoção, rota ruim, manutenção percebida..." />
         </label>
 
@@ -540,7 +593,27 @@ function Field({ label, value, onChange, type = "text", placeholder = "" }) {
   return (
     <label className="field">
       <span>{label}</span>
-      <input type={type} step={type === "number" ? "0.01" : undefined} min={type === "number" ? "0" : undefined} value={value} placeholder={placeholder} onChange={(event) => onChange(event.target.value)} />
+      <input type={type} value={value} placeholder={placeholder} onChange={(event) => onChange(event.target.value)} />
+    </label>
+  );
+}
+
+function NumericField({ label, value, onChange, decimals = 2, prefix = "", suffix = "", fixedDecimals = false }) {
+  return (
+    <label className="field">
+      <span>{label}</span>
+      <div className="numeric-input">
+        {prefix && <span>{prefix}</span>}
+        <input
+          type="text"
+          inputMode="decimal"
+          value={value}
+          placeholder="0"
+          onChange={(event) => onChange(formatNumericInput(event.target.value, decimals))}
+          onBlur={(event) => onChange(formatNumber(event.target.value, decimals, fixedDecimals))}
+        />
+        {suffix && <span>{suffix}</span>}
+      </div>
     </label>
   );
 }
@@ -610,12 +683,12 @@ function SettingsView({ settings, onChange, onSubmit }) {
       <section className="panel">
         <h2>Parâmetros do veículo</h2>
         <div className="form-grid">
-          <Field label="Preço médio do combustível" type="number" value={settings.fuelPrice} onChange={(value) => onChange("fuelPrice", value)} />
-          <Field label="Consumo esperado (km/L)" type="number" value={settings.targetConsumption} onChange={(value) => onChange("targetConsumption", value)} />
-          <Field label="Seguro mensal" type="number" value={settings.insuranceMonthly} onChange={(value) => onChange("insuranceMonthly", value)} />
-          <Field label="Manutenção por km" type="number" value={settings.maintenancePerKm} onChange={(value) => onChange("maintenancePerKm", value)} />
-          <Field label="Lavagem/limpeza mensal" type="number" value={settings.cleaningMonthly} onChange={(value) => onChange("cleaningMonthly", value)} />
-          <Field label="Outros custos mensais" type="number" value={settings.otherMonthly} onChange={(value) => onChange("otherMonthly", value)} />
+          <NumericField label="Preço médio do combustível" value={settings.fuelPrice} decimals={2} prefix="R$" fixedDecimals onChange={(value) => onChange("fuelPrice", value)} />
+          <NumericField label="Consumo esperado" value={settings.targetConsumption} decimals={1} suffix="km/L" onChange={(value) => onChange("targetConsumption", value)} />
+          <NumericField label="Seguro mensal" value={settings.insuranceMonthly} decimals={2} prefix="R$" fixedDecimals onChange={(value) => onChange("insuranceMonthly", value)} />
+          <NumericField label="Manutenção por km" value={settings.maintenancePerKm} decimals={2} prefix="R$" fixedDecimals onChange={(value) => onChange("maintenancePerKm", value)} />
+          <NumericField label="Lavagem/limpeza mensal" value={settings.cleaningMonthly} decimals={2} prefix="R$" fixedDecimals onChange={(value) => onChange("cleaningMonthly", value)} />
+          <NumericField label="Outros custos mensais" value={settings.otherMonthly} decimals={2} prefix="R$" fixedDecimals onChange={(value) => onChange("otherMonthly", value)} />
         </div>
         <div className="form-actions">
           <button className="primary-btn" type="submit">Salvar custos fixos</button>
