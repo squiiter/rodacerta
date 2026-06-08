@@ -18,6 +18,7 @@ import {
   YAxis
 } from "recharts";
 import {
+  BellRing,
   CalendarDays,
   Car,
   CircleDollarSign,
@@ -55,6 +56,9 @@ import {
 import "./styles.css";
 
 const COLORS = ["#18a77f", "#327de8", "#f5a524", "#dc4c64", "#7c66d8", "#00a6a6"];
+const BACKUP_LAST_EXPORT_KEY = "roda-certa-last-backup-export";
+const BACKUP_SNOOZE_KEY = "roda-certa-backup-reminder-snooze";
+const BACKUP_REMINDER_DAYS = 7;
 
 function emptyShift() {
   return {
@@ -133,6 +137,16 @@ function formatCurrencyInput(value) {
   }).format(Number(digits) / 100);
 }
 
+function readStoredDate(key) {
+  const value = localStorage.getItem(key);
+  return value ? new Date(value) : null;
+}
+
+function daysSince(date) {
+  if (!date || Number.isNaN(date.getTime())) return Infinity;
+  return (Date.now() - date.getTime()) / 86400000;
+}
+
 function App() {
   const [activeView, setActiveView] = useState("dashboard");
   const [shifts, setShifts] = useState([]);
@@ -143,6 +157,10 @@ function App() {
   const [search, setSearch] = useState("");
   const [month, setMonth] = useState("");
   const [ready, setReady] = useState(false);
+  const [backupReminder, setBackupReminder] = useState(() => ({
+    lastExportAt: readStoredDate(BACKUP_LAST_EXPORT_KEY),
+    snoozedUntil: readStoredDate(BACKUP_SNOOZE_KEY)
+  }));
 
   const totals = useMemo(() => getTotals(shifts, settings), [shifts, settings]);
   const preview = useMemo(() => calculateShift(normalizeShift(draft), settings), [draft, settings]);
@@ -175,6 +193,19 @@ function App() {
     setToast(message);
     window.clearTimeout(notify.timer);
     notify.timer = window.setTimeout(() => setToast(""), 2800);
+  }
+
+  function shouldShowBackupReminder() {
+    if (!shifts.length) return false;
+    if (backupReminder.snoozedUntil && backupReminder.snoozedUntil > new Date()) return false;
+    return daysSince(backupReminder.lastExportAt) >= BACKUP_REMINDER_DAYS;
+  }
+
+  function snoozeBackupReminder() {
+    const tomorrow = new Date(Date.now() + 86400000);
+    localStorage.setItem(BACKUP_SNOOZE_KEY, tomorrow.toISOString());
+    setBackupReminder((current) => ({ ...current, snoozedUntil: tomorrow }));
+    notify("Tudo bem, eu lembro você novamente amanhã.");
   }
 
   async function refresh() {
@@ -278,6 +309,12 @@ function App() {
     link.download = `roda-certa-backup-${todayISO()}.json`;
     link.click();
     URL.revokeObjectURL(url);
+
+    const now = new Date();
+    localStorage.setItem(BACKUP_LAST_EXPORT_KEY, now.toISOString());
+    localStorage.removeItem(BACKUP_SNOOZE_KEY);
+    setBackupReminder({ lastExportAt: now, snoozedUntil: null });
+    notify("Backup exportado. Salve uma cópia no Drive, OneDrive ou pendrive.");
   }
 
   async function importBackup(file) {
@@ -333,6 +370,14 @@ function App() {
           <Tab active={activeView === "settings"} icon={Settings} label="Custos" onClick={() => setActiveView("settings")} />
         </nav>
 
+        {shouldShowBackupReminder() && (
+          <BackupReminder
+            lastExportAt={backupReminder.lastExportAt}
+            onExport={exportBackup}
+            onSnooze={snoozeBackupReminder}
+          />
+        )}
+
         {activeView === "dashboard" && (
           <Dashboard
             totals={totals}
@@ -385,6 +430,31 @@ function App() {
 
       <div className={`toast ${toast ? "show" : ""}`} role="status" aria-live="polite">{toast}</div>
     </>
+  );
+}
+
+function BackupReminder({ lastExportAt, onExport, onSnooze }) {
+  const lastBackupText = lastExportAt
+    ? `Último backup exportado há ${Math.floor(daysSince(lastExportAt))} dia${Math.floor(daysSince(lastExportAt)) === 1 ? "" : "s"}.`
+    : "Você ainda não exportou nenhum backup.";
+
+  return (
+    <section className="backup-reminder" aria-label="Lembrete de backup">
+      <div className="backup-reminder-icon">
+        <BellRing size={22} />
+      </div>
+      <div>
+        <strong>Lembrete de segurança dos dados</strong>
+        <p>{lastBackupText} Exporte o arquivo e salve uma cópia no Google Drive, OneDrive, Dropbox ou pendrive.</p>
+      </div>
+      <div className="backup-reminder-actions">
+        <button className="primary-btn" type="button" onClick={onExport}>
+          <Download size={17} />
+          Exportar backup
+        </button>
+        <button className="ghost-btn" type="button" onClick={onSnooze}>Lembrar amanhã</button>
+      </div>
+    </section>
   );
 }
 

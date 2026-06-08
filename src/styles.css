@@ -172,6 +172,49 @@ h3 {
   box-shadow: 0 12px 24px rgba(16, 24, 32, 0.18);
 }
 
+.backup-reminder {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 14px;
+  align-items: center;
+  margin-bottom: 18px;
+  padding: 16px;
+  border: 1px solid rgba(245, 165, 36, 0.38);
+  border-radius: 8px;
+  background: linear-gradient(135deg, #fff8e9, #ffffff);
+  box-shadow: var(--shadow-soft);
+  animation: riseIn 360ms ease both;
+}
+
+.backup-reminder-icon {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 8px;
+  background: #fff0ce;
+  color: #9f6514;
+}
+
+.backup-reminder strong {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--text);
+  font-size: 1rem;
+}
+
+.backup-reminder p {
+  margin-bottom: 0;
+  color: var(--muted);
+  font-weight: 750;
+}
+
+.backup-reminder-actions {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
 .dashboard,
 .work-grid,
 .settings-grid,
@@ -765,6 +808,7 @@ textarea:focus {
   .hero-panel,
   .metric-grid,
   .chart-grid,
+  .backup-reminder,
   .work-grid,
   .settings-grid {
     grid-template-columns: 1fr;
@@ -822,6 +866,7 @@ textarea:focus {
 
   .panel-head,
   .apps-header,
+  .backup-reminder-actions,
   .history-card {
     align-items: stretch;
     flex-direction: column;
