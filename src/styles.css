@@ -327,7 +327,7 @@ h3 {
 
 .metric-grid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(6, minmax(0, 1fr));
   gap: 12px;
   margin-bottom: 16px;
 }
@@ -379,6 +379,55 @@ h3 {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(320px, 0.74fr);
   gap: 16px;
+}
+
+.goal-panel {
+  margin-bottom: 16px;
+}
+
+.goal-main {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 14px;
+}
+
+.goal-main h3 {
+  margin-bottom: 6px;
+  font-size: clamp(1.25rem, 3vw, 1.8rem);
+}
+
+.goal-main span {
+  color: var(--muted);
+  font-weight: 850;
+}
+
+.goal-main strong {
+  color: var(--accent-dark);
+  font-size: clamp(2rem, 5vw, 3rem);
+  letter-spacing: 0;
+}
+
+.goal-progress {
+  height: 12px;
+  overflow: hidden;
+  border-radius: 8px;
+  background: #e9eef1;
+}
+
+.goal-progress div {
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--accent), var(--blue));
+  transition: width 220ms ease;
+}
+
+.goal-stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 14px;
 }
 
 .panel {
@@ -483,6 +532,25 @@ h3 {
 
 .field.full {
   margin-top: 16px;
+}
+
+.checkbox-field {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.92);
+  color: var(--text);
+  font-weight: 900;
+}
+
+.checkbox-field input {
+  width: 18px;
+  min-height: 18px;
+  accent-color: var(--accent);
 }
 
 input,
@@ -686,6 +754,21 @@ textarea:focus {
   color: #9f6514;
 }
 
+.status-pill.medium {
+  background: #eaf2ff;
+  color: #235b9f;
+}
+
+.status-pill.bad {
+  background: #fff1f3;
+  color: var(--danger);
+}
+
+.status-pill.neutral {
+  background: #eef4f2;
+  color: var(--muted);
+}
+
 .history-head {
   align-items: flex-start;
 }
@@ -808,6 +891,7 @@ textarea:focus {
   .hero-panel,
   .metric-grid,
   .chart-grid,
+  .goal-stats,
   .backup-reminder,
   .work-grid,
   .settings-grid {
@@ -866,6 +950,7 @@ textarea:focus {
 
   .panel-head,
   .apps-header,
+  .goal-main,
   .backup-reminder-actions,
   .history-card {
     align-items: stretch;

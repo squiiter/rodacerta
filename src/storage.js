@@ -9,7 +9,12 @@ export const DEFAULT_SETTINGS = {
   insuranceMonthly: 0,
   maintenancePerKm: 0.25,
   cleaningMonthly: 0,
-  otherMonthly: 0
+  otherMonthly: 0,
+  minimumHourlyProfit: 20,
+  goodHourlyProfit: 35,
+  monthlyNetGoal: 0,
+  goalCycleStart: "",
+  goalDueDate: ""
 };
 
 let db;
