@@ -738,7 +738,7 @@ function ShiftForm({ draft, settings, preview, onSubmit, onChange, onAppChange, 
         </div>
         <div className="app-rows">
           {draft.apps.map((app, index) => (
-            <div className="app-row" key={`${index}-${app.name}`}>
+            <div className="app-row" key={`app-row-${index}`}>
               <Field label="App" value={app.name} onChange={(value) => onAppChange(index, "name", value)} placeholder="Uber, 99, Lalamove..." />
               <NumericField label="Valor" value={app.amount} mode="currency" prefix="R$" onChange={(value) => onAppChange(index, "amount", value)} />
               <button className="danger-icon" type="button" onClick={() => onRemoveApp(index)} aria-label="Remover app"><Trash2 size={18} /></button>
