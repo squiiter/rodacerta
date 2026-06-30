@@ -117,6 +117,10 @@ function buildNextCycleDraft(settings) {
   });
 }
 
+function dateRangesOverlap(startDate, dueDate, otherStartDate, otherDueDate) {
+  return startDate <= otherDueDate && dueDate >= otherStartDate;
+}
+
 function goalSettingsChanged(currentSettings, nextSettings) {
   return currentSettings.monthlyNetGoal !== nextSettings.monthlyNetGoal
     || currentSettings.goalCycleStart !== nextSettings.goalCycleStart
@@ -191,6 +195,8 @@ function App() {
   const [settings, setSettingsState] = useState(DEFAULT_SETTINGS);
   const [settingsDraft, setSettingsDraft] = useState(() => formatSettings(DEFAULT_SETTINGS));
   const [cycleDraft, setCycleDraft] = useState(() => buildNextCycleDraft(DEFAULT_SETTINGS));
+  const [editingCycleId, setEditingCycleId] = useState("");
+  const [cycleEditDraft, setCycleEditDraft] = useState(() => formatCycleDraft(DEFAULT_SETTINGS));
   const [draft, setDraft] = useState(emptyShift);
   const [toast, setToast] = useState("");
   const [search, setSearch] = useState("");
@@ -201,11 +207,12 @@ function App() {
     snoozedUntil: readStoredDate(BACKUP_SNOOZE_KEY)
   }));
 
-  const totals = useMemo(() => getTotals(shifts, settings), [shifts, settings]);
   const goalCycles = useMemo(() => getGoalCycles(settings), [settings]);
   const goalCycle = useMemo(() => getGoalCycle(settings), [settings]);
   const cycleShifts = useMemo(() => shifts.filter((shift) => shift.date >= goalCycle.startDate && shift.date <= goalCycle.dueDate), [shifts, goalCycle]);
   const cycleTotals = useMemo(() => getTotals(cycleShifts, settings), [cycleShifts, settings]);
+  const cycleDailyData = useMemo(() => groupDaily(cycleShifts, settings), [cycleShifts, settings]);
+  const cycleEfficiencyData = useMemo(() => groupEfficiency(cycleShifts, settings), [cycleShifts, settings]);
   const cycleSummaries = useMemo(() => goalCycles
     .map((cycle) => {
       const cycleRangeShifts = shifts.filter((shift) => shift.date >= cycle.startDate && shift.date <= cycle.dueDate);
@@ -218,18 +225,16 @@ function App() {
     })
     .sort((a, b) => b.startDate.localeCompare(a.startDate)), [goalCycles, shifts, settings]);
   const preview = useMemo(() => calculateShift(normalizeShift(draft), settings), [draft, settings]);
-  const dailyData = useMemo(() => groupDaily(shifts, settings), [shifts, settings]);
-  const efficiencyData = useMemo(() => groupEfficiency(shifts, settings), [shifts, settings]);
-  const appData = useMemo(() => Object.entries(totals.apps)
+  const appData = useMemo(() => Object.entries(cycleTotals.apps)
     .sort((a, b) => b[1] - a[1])
-    .map(([name, value]) => ({ name, value })), [totals]);
+    .map(([name, value]) => ({ name, value })), [cycleTotals]);
   const costData = useMemo(() => [
-    { name: "Combustível", value: totals.fuelCosts },
-    { name: "Manutenção", value: totals.maintenance },
-    { name: "Fixos", value: totals.fixedCosts },
-    { name: "Alimentação", value: totals.foodCosts },
-    { name: "Extras", value: totals.extraCosts }
-  ].filter((item) => item.value > 0), [totals]);
+    { name: "Combustível", value: cycleTotals.fuelCosts },
+    { name: "Manutenção", value: cycleTotals.maintenance },
+    { name: "Fixos", value: cycleTotals.fixedCosts },
+    { name: "Alimentação", value: cycleTotals.foodCosts },
+    { name: "Extras", value: cycleTotals.extraCosts }
+  ].filter((item) => item.value > 0), [cycleTotals]);
 
   useEffect(() => {
     initStorage()
@@ -320,11 +325,28 @@ function App() {
     notify("Custos fixos salvos.");
   }
 
+  function validateCycleRange(startDate, dueDate, excludeCycleId = "") {
+    if (dueDate < startDate) {
+      notify("A data final do ciclo precisa ser igual ou posterior ao início.");
+      return false;
+    }
+
+    const conflictingCycle = goalCycles.find((cycle) => cycle.id !== excludeCycleId
+      && dateRangesOverlap(startDate, dueDate, cycle.startDate, cycle.dueDate));
+
+    if (conflictingCycle) {
+      notify(`Esse período conflita com o ciclo de ${dateFormatter.format(parseDate(conflictingCycle.startDate))} a ${dateFormatter.format(parseDate(conflictingCycle.dueDate))}.`);
+      return false;
+    }
+
+    return true;
+  }
+
   async function handleCreateCycle(event) {
     event.preventDefault();
     const startDate = cycleDraft.startDate || todayISO();
     const dueDate = cycleDraft.dueDate || startDate;
-    if (dueDate < startDate) return notify("A data final do ciclo precisa ser igual ou posterior ao início.");
+    if (!validateCycleRange(startDate, dueDate)) return;
 
     const cycleId = crypto.randomUUID();
     const nextSettings = normalizeGoalSettings({
@@ -344,6 +366,64 @@ function App() {
     await saveSettings(nextSettings);
     await refresh();
     notify("Novo ciclo iniciado.");
+  }
+
+  function handleEditCycle(cycle) {
+    setEditingCycleId(cycle.id);
+    setCycleEditDraft(formatCycleDraft(cycle));
+  }
+
+  function cancelCycleEdit() {
+    setEditingCycleId("");
+    setCycleEditDraft(formatCycleDraft(DEFAULT_SETTINGS));
+  }
+
+  async function handleUpdateCycle(event) {
+    event.preventDefault();
+    if (!editingCycleId) return;
+
+    const startDate = cycleEditDraft.startDate || todayISO();
+    const dueDate = cycleEditDraft.dueDate || startDate;
+    if (!validateCycleRange(startDate, dueDate, editingCycleId)) return;
+
+    const nextSettings = normalizeGoalSettings({
+      ...settings,
+      goalCycles: goalCycles.map((cycle) => (cycle.id === editingCycleId
+        ? {
+          ...cycle,
+          startDate,
+          dueDate,
+          target: numberValue(cycleEditDraft.target)
+        }
+        : cycle))
+    });
+
+    await saveSettings(nextSettings);
+    await refresh();
+    cancelCycleEdit();
+    notify("Ciclo atualizado.");
+  }
+
+  async function handleDeleteCycle(cycleId) {
+    const cycle = goalCycles.find((item) => item.id === cycleId);
+    if (!cycle) return;
+    if (goalCycles.length === 1) return notify("Mantenha pelo menos um ciclo cadastrado.");
+    if (!window.confirm(`Excluir o ciclo de ${dateFormatter.format(parseDate(cycle.startDate))} a ${dateFormatter.format(parseDate(cycle.dueDate))}?`)) return;
+
+    const remainingCycles = goalCycles.filter((item) => item.id !== cycleId);
+    const nextActiveCycleId = settings.activeGoalCycleId === cycleId
+      ? remainingCycles[remainingCycles.length - 1].id
+      : settings.activeGoalCycleId;
+    const nextSettings = normalizeGoalSettings({
+      ...settings,
+      goalCycles: remainingCycles,
+      activeGoalCycleId: nextActiveCycleId
+    });
+
+    await saveSettings(nextSettings);
+    await refresh();
+    if (editingCycleId === cycleId) cancelCycleEdit();
+    notify("Ciclo excluído.");
   }
 
   async function handleActivateCycle(cycleId) {
@@ -497,15 +577,15 @@ function App() {
 
         {activeView === "dashboard" && (
           <Dashboard
-            totals={totals}
+            totals={cycleTotals}
             cycleTotals={cycleTotals}
             goalCycle={goalCycle}
-            shifts={shifts}
+            shifts={cycleShifts}
             settings={settings}
-            dailyData={dailyData}
+            dailyData={cycleDailyData}
             appData={appData}
             costData={costData}
-            efficiencyData={efficiencyData}
+            efficiencyData={cycleEfficiencyData}
             onNewShift={() => setActiveView("shift")}
           />
         )}
@@ -542,12 +622,19 @@ function App() {
           <SettingsView
             settings={settingsDraft}
             cycleDraft={cycleDraft}
+            editingCycleId={editingCycleId}
+            cycleEditDraft={cycleEditDraft}
             cycles={cycleSummaries}
             activeCycleId={settings.activeGoalCycleId}
             onChange={(field, value) => setSettingsDraft((current) => ({ ...current, [field]: value }))}
             onCycleChange={(field, value) => setCycleDraft((current) => ({ ...current, [field]: value }))}
+            onCycleEditChange={(field, value) => setCycleEditDraft((current) => ({ ...current, [field]: value }))}
             onSubmit={handleSaveSettings}
             onCreateCycle={handleCreateCycle}
+            onEditCycle={handleEditCycle}
+            onCancelCycleEdit={cancelCycleEdit}
+            onUpdateCycle={handleUpdateCycle}
+            onDeleteCycle={handleDeleteCycle}
             onActivateCycle={handleActivateCycle}
           />
         )}
@@ -597,10 +684,7 @@ function Dashboard({ totals, cycleTotals, goalCycle, shifts, settings, dailyData
   const margin = totals.revenue > 0 ? (totals.profit / totals.revenue) * 100 : 0;
   const profitPerHour = totals.hours > 0 ? totals.profit / totals.hours : 0;
   const bestApp = appData[0];
-  const dates = shifts.map((shift) => shift.date).sort();
-  const period = dates.length
-    ? `${dateFormatter.format(parseDate(dates[0]))} a ${dateFormatter.format(parseDate(dates[dates.length - 1]))}`
-    : "Sem expedientes lançados";
+  const period = `${dateFormatter.format(parseDate(goalCycle.startDate))} a ${dateFormatter.format(parseDate(goalCycle.dueDate))}`;
   const bestDay = shifts.map((shift) => ({ shift, calc: calculateShift(shift, settings) })).sort((a, b) => b.calc.profit - a.calc.profit)[0];
   const worstDay = shifts.map((shift) => ({ shift, calc: calculateShift(shift, settings) })).sort((a, b) => a.calc.profit - b.calc.profit)[0];
   const goalRemaining = Math.max(0, goalCycle.target - cycleTotals.profit);
@@ -984,12 +1068,19 @@ function History({ shifts, months, month, search, settings, onMonth, onSearch, o
 function SettingsView({
   settings,
   cycleDraft,
+  editingCycleId,
+  cycleEditDraft,
   cycles,
   activeCycleId,
   onChange,
   onCycleChange,
+  onCycleEditChange,
   onSubmit,
   onCreateCycle,
+  onEditCycle,
+  onCancelCycleEdit,
+  onUpdateCycle,
+  onDeleteCycle,
   onActivateCycle
 }) {
   return (
@@ -1035,24 +1126,52 @@ function SettingsView({
             {cycles.map((cycle) => {
               const progress = cycle.target > 0 ? Math.min(100, (cycle.totals.profit / cycle.target) * 100) : 0;
               const isActive = cycle.id === activeCycleId;
+              const isEditing = cycle.id === editingCycleId;
               return (
                 <article className={`cycle-card ${isActive ? "active" : ""}`} key={cycle.id}>
-                  <div className="cycle-card-main">
-                    <div>
-                      <h3>{dateFormatter.format(parseDate(cycle.startDate))} a {dateFormatter.format(parseDate(cycle.dueDate))}</h3>
-                      <p>
-                        Meta {formatMoney(cycle.target)} · Lucro {formatMoney(cycle.totals.profit)} · {cycle.shiftCount} expediente{cycle.shiftCount === 1 ? "" : "s"}
-                      </p>
-                    </div>
-                    <strong>{progress.toFixed(0)}%</strong>
-                  </div>
-                  <div className="goal-progress" aria-label="Progresso do ciclo">
-                    <div style={{ width: `${progress}%` }} />
-                  </div>
-                  <div className="cycle-card-actions">
-                    <span className={`cycle-badge ${isActive ? "active" : ""}`}>{isActive ? "Ativo no painel" : "Disponível"}</span>
-                    {!isActive && <button className="ghost-btn" type="button" onClick={() => onActivateCycle(cycle.id)}>Usar no painel</button>}
-                  </div>
+                  {isEditing ? (
+                    <form className="cycle-edit-form" onSubmit={onUpdateCycle}>
+                      <div className="cycle-card-main">
+                        <div>
+                          <h3>Editando ciclo</h3>
+                          <p>Corrija as datas ou a meta antes de salvar.</p>
+                        </div>
+                        <strong>{progress.toFixed(0)}%</strong>
+                      </div>
+                      <div className="form-grid">
+                        <NumericField label="Meta do ciclo" value={cycleEditDraft.target} mode="currency" prefix="R$" onChange={(value) => onCycleEditChange("target", value)} />
+                        <Field label="Início do ciclo" type="date" value={cycleEditDraft.startDate} onChange={(value) => onCycleEditChange("startDate", value)} />
+                        <Field label="Data final do ciclo" type="date" value={cycleEditDraft.dueDate} onChange={(value) => onCycleEditChange("dueDate", value)} />
+                      </div>
+                      <div className="cycle-edit-actions">
+                        <button className="primary-btn" type="submit">Salvar ciclo</button>
+                        <button className="ghost-btn" type="button" onClick={onCancelCycleEdit}>Cancelar</button>
+                      </div>
+                    </form>
+                  ) : (
+                    <>
+                      <div className="cycle-card-main">
+                        <div>
+                          <h3>{dateFormatter.format(parseDate(cycle.startDate))} a {dateFormatter.format(parseDate(cycle.dueDate))}</h3>
+                          <p>
+                            Meta {formatMoney(cycle.target)} · Lucro {formatMoney(cycle.totals.profit)} · {cycle.shiftCount} expediente{cycle.shiftCount === 1 ? "" : "s"}
+                          </p>
+                        </div>
+                        <strong>{progress.toFixed(0)}%</strong>
+                      </div>
+                      <div className="goal-progress" aria-label="Progresso do ciclo">
+                        <div style={{ width: `${progress}%` }} />
+                      </div>
+                      <div className="cycle-card-actions">
+                        <span className={`cycle-badge ${isActive ? "active" : ""}`}>{isActive ? "Ativo no painel" : "Disponível"}</span>
+                        <div className="cycle-action-buttons">
+                          {!isActive && <button className="ghost-btn" type="button" onClick={() => onActivateCycle(cycle.id)}>Usar no painel</button>}
+                          <button className="ghost-btn" type="button" onClick={() => onEditCycle(cycle)}>Editar ciclo</button>
+                          <button className="danger-btn" type="button" onClick={() => onDeleteCycle(cycle.id)}>Excluir ciclo</button>
+                        </div>
+                      </div>
+                    </>
+                  )}
                 </article>
               );
             })}

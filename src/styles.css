@@ -931,6 +931,19 @@ textarea:focus {
   margin-top: 12px;
 }
 
+.cycle-action-buttons,
+.cycle-edit-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.cycle-edit-form {
+  display: grid;
+  gap: 12px;
+}
+
 .cycle-badge {
   display: inline-flex;
   align-items: center;
@@ -1051,7 +1064,9 @@ textarea:focus {
   .backup-reminder-actions,
   .history-card,
   .cycle-card-main,
-  .cycle-card-actions {
+  .cycle-card-actions,
+  .cycle-action-buttons,
+  .cycle-edit-actions {
     align-items: stretch;
     flex-direction: column;
   }
