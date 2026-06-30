@@ -14,7 +14,9 @@ export const DEFAULT_SETTINGS = {
   goodHourlyProfit: 35,
   monthlyNetGoal: 0,
   goalCycleStart: "",
-  goalDueDate: ""
+  goalDueDate: "",
+  goalCycles: [],
+  activeGoalCycleId: ""
 };
 
 let db;

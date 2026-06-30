@@ -516,6 +516,11 @@ h3 {
   grid-template-columns: minmax(0, 1fr) minmax(280px, 420px);
 }
 
+.settings-stack {
+  display: grid;
+  gap: 16px;
+}
+
 .form-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -851,6 +856,98 @@ textarea:focus {
   color: var(--muted);
 }
 
+.cycle-head {
+  align-items: flex-start;
+}
+
+.cycle-head > div {
+  display: grid;
+  gap: 6px;
+}
+
+.cycle-head span {
+  display: block;
+  color: var(--muted);
+  font-size: 0.92rem;
+  font-weight: 800;
+}
+
+.cycle-form {
+  margin-bottom: 18px;
+}
+
+.cycle-list {
+  display: grid;
+  gap: 12px;
+}
+
+.cycle-card {
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.78);
+  transition: transform 180ms ease, box-shadow 180ms ease, border-color 180ms ease;
+}
+
+.cycle-card:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-soft);
+}
+
+.cycle-card.active {
+  border-color: rgba(24, 167, 127, 0.34);
+  background: linear-gradient(135deg, rgba(231, 246, 241, 0.92), rgba(255, 255, 255, 0.98));
+}
+
+.cycle-card-main {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.cycle-card-main h3 {
+  margin: 0 0 6px;
+}
+
+.cycle-card-main p {
+  margin-bottom: 0;
+  color: var(--muted);
+  font-weight: 800;
+}
+
+.cycle-card-main strong {
+  color: var(--accent-dark);
+  font-size: 1.5rem;
+  letter-spacing: 0;
+}
+
+.cycle-card-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.cycle-badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 36px;
+  padding: 0 12px;
+  border-radius: 999px;
+  background: var(--soft);
+  color: var(--muted);
+  font-size: 0.84rem;
+  font-weight: 900;
+}
+
+.cycle-badge.active {
+  background: #e7f6f1;
+  color: var(--accent-dark);
+}
+
 .rules-card p {
   margin-bottom: 12px;
 }
@@ -952,7 +1049,9 @@ textarea:focus {
   .apps-header,
   .goal-main,
   .backup-reminder-actions,
-  .history-card {
+  .history-card,
+  .cycle-card-main,
+  .cycle-card-actions {
     align-items: stretch;
     flex-direction: column;
   }

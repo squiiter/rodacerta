@@ -37,14 +37,17 @@ import {
 } from "lucide-react";
 import {
   DEFAULT_APPS,
+  addDays,
   calculateShift,
   classifyShift,
   dateFormatter,
   formatMoney,
   getGoalCycle,
+  getGoalCycles,
   getTotals,
   groupDaily,
   groupEfficiency,
+  normalizeGoalSettings,
   parseDate,
   todayISO
 } from "./calculations";
@@ -92,11 +95,34 @@ function formatSettings(settings) {
     cleaningMonthly: formatNumber(settings.cleaningMonthly, 2, true),
     otherMonthly: formatNumber(settings.otherMonthly, 2, true),
     minimumHourlyProfit: formatNumber(settings.minimumHourlyProfit, 2, true),
-    goodHourlyProfit: formatNumber(settings.goodHourlyProfit, 2, true),
-    monthlyNetGoal: formatNumber(settings.monthlyNetGoal, 2, true),
-    goalCycleStart: settings.goalCycleStart || "",
-    goalDueDate: settings.goalDueDate || ""
+    goodHourlyProfit: formatNumber(settings.goodHourlyProfit, 2, true)
   };
+}
+
+function formatCycleDraft(cycle) {
+  return {
+    target: formatNumber(cycle?.target, 2, true),
+    startDate: cycle?.startDate || todayISO(),
+    dueDate: cycle?.dueDate || todayISO()
+  };
+}
+
+function buildNextCycleDraft(settings) {
+  const currentCycle = getGoalCycle(settings);
+  const nextStartDate = addDays(currentCycle.dueDate, 1);
+  return formatCycleDraft({
+    target: currentCycle.target,
+    startDate: nextStartDate,
+    dueDate: addDays(nextStartDate, currentCycle.cycleLength - 1)
+  });
+}
+
+function goalSettingsChanged(currentSettings, nextSettings) {
+  return currentSettings.monthlyNetGoal !== nextSettings.monthlyNetGoal
+    || currentSettings.goalCycleStart !== nextSettings.goalCycleStart
+    || currentSettings.goalDueDate !== nextSettings.goalDueDate
+    || currentSettings.activeGoalCycleId !== nextSettings.activeGoalCycleId
+    || JSON.stringify(currentSettings.goalCycles || []) !== JSON.stringify(nextSettings.goalCycles || []);
 }
 
 function numberValue(value) {
@@ -164,6 +190,7 @@ function App() {
   const [shifts, setShifts] = useState([]);
   const [settings, setSettingsState] = useState(DEFAULT_SETTINGS);
   const [settingsDraft, setSettingsDraft] = useState(() => formatSettings(DEFAULT_SETTINGS));
+  const [cycleDraft, setCycleDraft] = useState(() => buildNextCycleDraft(DEFAULT_SETTINGS));
   const [draft, setDraft] = useState(emptyShift);
   const [toast, setToast] = useState("");
   const [search, setSearch] = useState("");
@@ -175,9 +202,21 @@ function App() {
   }));
 
   const totals = useMemo(() => getTotals(shifts, settings), [shifts, settings]);
+  const goalCycles = useMemo(() => getGoalCycles(settings), [settings]);
   const goalCycle = useMemo(() => getGoalCycle(settings), [settings]);
   const cycleShifts = useMemo(() => shifts.filter((shift) => shift.date >= goalCycle.startDate && shift.date <= goalCycle.dueDate), [shifts, goalCycle]);
   const cycleTotals = useMemo(() => getTotals(cycleShifts, settings), [cycleShifts, settings]);
+  const cycleSummaries = useMemo(() => goalCycles
+    .map((cycle) => {
+      const cycleRangeShifts = shifts.filter((shift) => shift.date >= cycle.startDate && shift.date <= cycle.dueDate);
+      return {
+        ...cycle,
+        totals: getTotals(cycleRangeShifts, settings),
+        shiftCount: cycleRangeShifts.length,
+        isActive: cycle.id === settings.activeGoalCycleId
+      };
+    })
+    .sort((a, b) => b.startDate.localeCompare(a.startDate)), [goalCycles, shifts, settings]);
   const preview = useMemo(() => calculateShift(normalizeShift(draft), settings), [draft, settings]);
   const dailyData = useMemo(() => groupDaily(shifts, settings), [shifts, settings]);
   const efficiencyData = useMemo(() => groupEfficiency(shifts, settings), [shifts, settings]);
@@ -199,6 +238,7 @@ function App() {
         setShifts(data.shifts);
         setSettingsState(data.settings);
         setSettingsDraft(formatSettings(data.settings));
+        setCycleDraft(buildNextCycleDraft(data.settings));
         setReady(true);
       })
       .catch(() => notify("Não foi possível iniciar o banco local."));
@@ -206,14 +246,9 @@ function App() {
 
   async function loadAndApplyData() {
     const data = await loadData();
-    const cycle = getGoalCycle(data.settings);
-    const nextSettings = {
-      ...data.settings,
-      goalCycleStart: cycle.startDate,
-      goalDueDate: cycle.dueDate
-    };
+    const nextSettings = normalizeGoalSettings(data.settings);
 
-    if (nextSettings.goalCycleStart !== data.settings.goalCycleStart || nextSettings.goalDueDate !== data.settings.goalDueDate) {
+    if (goalSettingsChanged(data.settings, nextSettings)) {
       await saveSettings(nextSettings);
     }
 
@@ -244,6 +279,7 @@ function App() {
     setShifts(data.shifts);
     setSettingsState(data.settings);
     setSettingsDraft(formatSettings(data.settings));
+    setCycleDraft(buildNextCycleDraft(data.settings));
   }
 
   async function handleSaveShift(event) {
@@ -268,7 +304,8 @@ function App() {
 
   async function handleSaveSettings(event) {
     event.preventDefault();
-    const nextSettings = {
+    const nextSettings = normalizeGoalSettings({
+      ...settings,
       fuelPrice: numberValue(settingsDraft.fuelPrice),
       targetConsumption: numberValue(settingsDraft.targetConsumption),
       insuranceMonthly: numberValue(settingsDraft.insuranceMonthly),
@@ -276,15 +313,48 @@ function App() {
       cleaningMonthly: numberValue(settingsDraft.cleaningMonthly),
       otherMonthly: numberValue(settingsDraft.otherMonthly),
       minimumHourlyProfit: numberValue(settingsDraft.minimumHourlyProfit),
-      goodHourlyProfit: numberValue(settingsDraft.goodHourlyProfit),
-      monthlyNetGoal: numberValue(settingsDraft.monthlyNetGoal),
-      goalCycleStart: settingsDraft.goalCycleStart || todayISO(),
-      goalDueDate: settingsDraft.goalDueDate || settings.goalDueDate
-    };
-    if (nextSettings.goalDueDate < nextSettings.goalCycleStart) return notify("A data final da meta precisa ser igual ou posterior ao início.");
+      goodHourlyProfit: numberValue(settingsDraft.goodHourlyProfit)
+    });
     await saveSettings(nextSettings);
     await refresh();
     notify("Custos fixos salvos.");
+  }
+
+  async function handleCreateCycle(event) {
+    event.preventDefault();
+    const startDate = cycleDraft.startDate || todayISO();
+    const dueDate = cycleDraft.dueDate || startDate;
+    if (dueDate < startDate) return notify("A data final do ciclo precisa ser igual ou posterior ao início.");
+
+    const cycleId = crypto.randomUUID();
+    const nextSettings = normalizeGoalSettings({
+      ...settings,
+      goalCycles: [
+        ...(settings.goalCycles || []),
+        {
+          id: cycleId,
+          startDate,
+          dueDate,
+          target: numberValue(cycleDraft.target)
+        }
+      ],
+      activeGoalCycleId: cycleId
+    });
+
+    await saveSettings(nextSettings);
+    await refresh();
+    notify("Novo ciclo iniciado.");
+  }
+
+  async function handleActivateCycle(cycleId) {
+    if (cycleId === settings.activeGoalCycleId) return;
+    const nextSettings = normalizeGoalSettings({
+      ...settings,
+      activeGoalCycleId: cycleId
+    });
+    await saveSettings(nextSettings);
+    await refresh();
+    notify("Ciclo carregado no painel.");
   }
 
   function updateDraft(field, value) {
@@ -471,8 +541,14 @@ function App() {
         {activeView === "settings" && (
           <SettingsView
             settings={settingsDraft}
+            cycleDraft={cycleDraft}
+            cycles={cycleSummaries}
+            activeCycleId={settings.activeGoalCycleId}
             onChange={(field, value) => setSettingsDraft((current) => ({ ...current, [field]: value }))}
+            onCycleChange={(field, value) => setCycleDraft((current) => ({ ...current, [field]: value }))}
             onSubmit={handleSaveSettings}
+            onCreateCycle={handleCreateCycle}
+            onActivateCycle={handleActivateCycle}
           />
         )}
       </main>
@@ -529,7 +605,7 @@ function Dashboard({ totals, cycleTotals, goalCycle, shifts, settings, dailyData
   const worstDay = shifts.map((shift) => ({ shift, calc: calculateShift(shift, settings) })).sort((a, b) => a.calc.profit - b.calc.profit)[0];
   const goalRemaining = Math.max(0, goalCycle.target - cycleTotals.profit);
   const goalProgress = goalCycle.target > 0 ? Math.min(100, (cycleTotals.profit / goalCycle.target) * 100) : 0;
-  const dailyGoal = goalCycle.daysLeft > 0 ? goalRemaining / goalCycle.daysLeft : goalRemaining;
+  const dailyGoal = goalCycle.daysLeft > 0 ? goalRemaining / goalCycle.daysLeft : 0;
 
   return (
     <section className="dashboard">
@@ -556,7 +632,14 @@ function Dashboard({ totals, cycleTotals, goalCycle, shifts, settings, dailyData
         <Metric icon={Car} label="Custo por km" value={totals.km ? formatMoney(totals.costs / totals.km) : formatMoney(0)} hint={`${totals.km.toFixed(1)} km rodados`} />
         <Metric icon={Clock3} label="Lucro por hora" value={formatMoney(profitPerHour)} hint={`${totals.hours.toFixed(1)} h trabalhadas`} />
         <Metric icon={Gauge} label="Consumo médio" value={`${avgConsumption.toFixed(1)} km/L`} hint={`${totals.estimatedFuelLiters.toFixed(1)} L estimados`} />
-        <Metric icon={Target} label="Meta do ciclo" value={`${goalProgress.toFixed(0)}%`} hint={goalCycle.target > 0 ? `${formatMoney(dailyGoal)} líquidos/dia` : "Configure uma meta"} />
+        <Metric
+          icon={Target}
+          label="Meta do ciclo"
+          value={`${goalProgress.toFixed(0)}%`}
+          hint={goalCycle.target > 0
+            ? (goalCycle.isFinished ? "Ciclo encerrado" : `${formatMoney(dailyGoal)} líquidos/dia`)
+            : "Crie um ciclo"}
+        />
       </section>
 
       <GoalPanel
@@ -658,7 +741,7 @@ function GoalPanel({ cycle, totals, progress, remaining, dailyGoal }) {
   const hasGoal = cycle.target > 0;
   const statusText = hasGoal
     ? `${formatMoney(totals.profit)} de ${formatMoney(cycle.target)}`
-    : "Defina uma meta líquida em Custos";
+    : "Defina uma meta líquida no ciclo";
 
   return (
     <section className="panel goal-panel">
@@ -675,8 +758,8 @@ function GoalPanel({ cycle, totals, progress, remaining, dailyGoal }) {
       </div>
       <div className="goal-stats">
         <Insight label="Falta para a meta" value={formatMoney(remaining)} />
-        <Insight label="Necessário por dia" value={hasGoal ? formatMoney(dailyGoal) : formatMoney(0)} />
-        <Insight label="Dias restantes" value={`${cycle.daysLeft} dia${cycle.daysLeft === 1 ? "" : "s"}`} />
+        <Insight label="Necessário por dia" value={hasGoal && !cycle.isFinished ? formatMoney(dailyGoal) : formatMoney(0)} />
+        <Insight label={cycle.isFinished ? "Status" : "Dias restantes"} value={cycle.isFinished ? "Ciclo encerrado" : `${cycle.daysLeft} dia${cycle.daysLeft === 1 ? "" : "s"}`} />
       </div>
     </section>
   );
@@ -898,28 +981,85 @@ function History({ shifts, months, month, search, settings, onMonth, onSearch, o
   );
 }
 
-function SettingsView({ settings, onChange, onSubmit }) {
+function SettingsView({
+  settings,
+  cycleDraft,
+  cycles,
+  activeCycleId,
+  onChange,
+  onCycleChange,
+  onSubmit,
+  onCreateCycle,
+  onActivateCycle
+}) {
   return (
-    <form className="settings-grid" onSubmit={onSubmit}>
-      <section className="panel">
-        <h2>Parâmetros do veículo</h2>
-        <div className="form-grid">
-          <NumericField label="Preço médio do combustível" value={settings.fuelPrice} mode="currency" prefix="R$" onChange={(value) => onChange("fuelPrice", value)} />
-          <NumericField label="Consumo esperado" value={settings.targetConsumption} mode="decimal" decimals={1} suffix="km/L" onChange={(value) => onChange("targetConsumption", value)} />
-          <NumericField label="Seguro mensal" value={settings.insuranceMonthly} mode="currency" prefix="R$" onChange={(value) => onChange("insuranceMonthly", value)} />
-          <NumericField label="Manutenção por km" value={settings.maintenancePerKm} mode="currency" prefix="R$" onChange={(value) => onChange("maintenancePerKm", value)} />
-          <NumericField label="Lavagem/limpeza mensal" value={settings.cleaningMonthly} mode="currency" prefix="R$" onChange={(value) => onChange("cleaningMonthly", value)} />
-          <NumericField label="Outros custos mensais" value={settings.otherMonthly} mode="currency" prefix="R$" onChange={(value) => onChange("otherMonthly", value)} />
-          <NumericField label="Mínimo líquido por hora" value={settings.minimumHourlyProfit} mode="currency" prefix="R$" onChange={(value) => onChange("minimumHourlyProfit", value)} />
-          <NumericField label="Bom líquido por hora" value={settings.goodHourlyProfit} mode="currency" prefix="R$" onChange={(value) => onChange("goodHourlyProfit", value)} />
-          <NumericField label="Meta líquida do ciclo" value={settings.monthlyNetGoal} mode="currency" prefix="R$" onChange={(value) => onChange("monthlyNetGoal", value)} />
-          <Field label="Início da meta" type="date" value={settings.goalCycleStart} onChange={(value) => onChange("goalCycleStart", value)} />
-          <Field label="Data final da meta" type="date" value={settings.goalDueDate} onChange={(value) => onChange("goalDueDate", value)} />
-        </div>
-        <div className="form-actions">
-          <button className="primary-btn" type="submit">Salvar custos fixos</button>
-        </div>
-      </section>
+    <section className="settings-grid">
+      <div className="settings-stack">
+        <form className="panel" onSubmit={onSubmit}>
+          <h2>Parâmetros do veículo</h2>
+          <div className="form-grid">
+            <NumericField label="Preço médio do combustível" value={settings.fuelPrice} mode="currency" prefix="R$" onChange={(value) => onChange("fuelPrice", value)} />
+            <NumericField label="Consumo esperado" value={settings.targetConsumption} mode="decimal" decimals={1} suffix="km/L" onChange={(value) => onChange("targetConsumption", value)} />
+            <NumericField label="Seguro mensal" value={settings.insuranceMonthly} mode="currency" prefix="R$" onChange={(value) => onChange("insuranceMonthly", value)} />
+            <NumericField label="Manutenção por km" value={settings.maintenancePerKm} mode="currency" prefix="R$" onChange={(value) => onChange("maintenancePerKm", value)} />
+            <NumericField label="Lavagem/limpeza mensal" value={settings.cleaningMonthly} mode="currency" prefix="R$" onChange={(value) => onChange("cleaningMonthly", value)} />
+            <NumericField label="Outros custos mensais" value={settings.otherMonthly} mode="currency" prefix="R$" onChange={(value) => onChange("otherMonthly", value)} />
+            <NumericField label="Mínimo líquido por hora" value={settings.minimumHourlyProfit} mode="currency" prefix="R$" onChange={(value) => onChange("minimumHourlyProfit", value)} />
+            <NumericField label="Bom líquido por hora" value={settings.goodHourlyProfit} mode="currency" prefix="R$" onChange={(value) => onChange("goodHourlyProfit", value)} />
+          </div>
+          <div className="form-actions">
+            <button className="primary-btn" type="submit">Salvar custos fixos</button>
+          </div>
+        </form>
+
+        <section className="panel">
+          <div className="panel-head cycle-head">
+            <div>
+              <h2>Ciclos de meta</h2>
+              <span>Crie um ciclo com datas e meta próprias. O painel passa a usar apenas o ciclo ativo.</span>
+            </div>
+          </div>
+
+          <form className="cycle-form" onSubmit={onCreateCycle}>
+            <div className="form-grid">
+              <NumericField label="Meta líquida do novo ciclo" value={cycleDraft.target} mode="currency" prefix="R$" onChange={(value) => onCycleChange("target", value)} />
+              <Field label="Início do ciclo" type="date" value={cycleDraft.startDate} onChange={(value) => onCycleChange("startDate", value)} />
+              <Field label="Data final do ciclo" type="date" value={cycleDraft.dueDate} onChange={(value) => onCycleChange("dueDate", value)} />
+            </div>
+            <div className="form-actions">
+              <button className="primary-btn" type="submit">Iniciar novo ciclo</button>
+            </div>
+          </form>
+
+          <div className="cycle-list">
+            {cycles.map((cycle) => {
+              const progress = cycle.target > 0 ? Math.min(100, (cycle.totals.profit / cycle.target) * 100) : 0;
+              const isActive = cycle.id === activeCycleId;
+              return (
+                <article className={`cycle-card ${isActive ? "active" : ""}`} key={cycle.id}>
+                  <div className="cycle-card-main">
+                    <div>
+                      <h3>{dateFormatter.format(parseDate(cycle.startDate))} a {dateFormatter.format(parseDate(cycle.dueDate))}</h3>
+                      <p>
+                        Meta {formatMoney(cycle.target)} · Lucro {formatMoney(cycle.totals.profit)} · {cycle.shiftCount} expediente{cycle.shiftCount === 1 ? "" : "s"}
+                      </p>
+                    </div>
+                    <strong>{progress.toFixed(0)}%</strong>
+                  </div>
+                  <div className="goal-progress" aria-label="Progresso do ciclo">
+                    <div style={{ width: `${progress}%` }} />
+                  </div>
+                  <div className="cycle-card-actions">
+                    <span className={`cycle-badge ${isActive ? "active" : ""}`}>{isActive ? "Ativo no painel" : "Disponível"}</span>
+                    {!isActive && <button className="ghost-btn" type="button" onClick={() => onActivateCycle(cycle.id)}>Usar no painel</button>}
+                  </div>
+                </article>
+              );
+            })}
+          </div>
+        </section>
+      </div>
+
       <section className="panel rules-card">
         <h2>Regras de cálculo</h2>
         <p><strong>Combustível:</strong> o lucro usa litros consumidos estimados por KM rodado e consumo esperado. Se houve abastecimento, o valor pago serve para calcular o preço real por litro do dia.</p>
@@ -927,10 +1067,10 @@ function SettingsView({ settings, onChange, onSubmit }) {
         <p><strong>Manutenção:</strong> km rodados multiplicado pelo custo por km configurado.</p>
         <p><strong>Hora trabalhada:</strong> diferença entre início e fim do expediente. Se terminar depois da meia-noite, o sistema considera a virada do dia.</p>
         <p><strong>Qualidade da jornada:</strong> compara lucro líquido por hora com o mínimo e com a meta de dia bom configurados.</p>
-        <p><strong>Meta líquida:</strong> acompanha o lucro líquido entre início e data final. Depois que a data final passa, um novo ciclo é aberto com a mesma duração.</p>
+        <p><strong>Meta líquida:</strong> cada ciclo tem início, fim e meta próprios. Ao iniciar um novo ciclo, o painel considera apenas o intervalo dele.</p>
         <p><strong>Lucro líquido:</strong> faturamento menos combustível, alimentação, extras, manutenção e custos fixos proporcionais.</p>
       </section>
-    </form>
+    </section>
   );
 }
 

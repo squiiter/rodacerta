@@ -47,7 +47,7 @@ Os arquivos finais serão criados em `dist/`.
 - Abastecimento: é opcional por expediente. Quando marcado, registra litros e valor pagos, mas o lucro do dia considera apenas o combustível estimado como consumido naquele expediente.
 - Lucro por hora: lucro líquido dividido pelas horas trabalhadas.
 - Qualidade da jornada: compara lucro por hora com os limites configurados para dia ruim, médio ou bom.
-- Meta líquida do ciclo: soma o lucro líquido entre a data inicial e final configuradas. Depois que a data final passa, o sistema abre automaticamente um novo ciclo com a mesma duração.
+- Meta líquida do ciclo: soma o lucro líquido apenas dentro do ciclo ativo selecionado. Cada ciclo pode ter sua própria data inicial, data final e meta líquida.
 - Seguro, limpeza e outros custos mensais: divididos por 30 para calcular a fração diária.
 - Manutenção: KM rodados multiplicado pelo custo de manutenção por KM.
 - Lucro líquido: faturamento total menos combustível, alimentação, extras, manutenção e custos fixos proporcionais.

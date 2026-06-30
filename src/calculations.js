@@ -133,27 +133,70 @@ export function classifyShift(calc, settings) {
   return { level: "bad", label: "Jornada ruim", text: "Abaixo do mínimo por hora" };
 }
 
-export function getGoalCycle(settings, date = todayISO()) {
-  const target = Number(settings.monthlyNetGoal || 0);
-  let startDate = settings.goalCycleStart || firstDayOfMonth(date);
-  let dueDate = settings.goalDueDate || lastDayOfMonth(date);
+function sortCycles(a, b) {
+  return a.startDate.localeCompare(b.startDate) || a.dueDate.localeCompare(b.dueDate);
+}
+
+function sanitizeCycle(cycle, index, date = todayISO()) {
+  const startDate = cycle?.startDate || cycle?.goalCycleStart || firstDayOfMonth(date);
+  let dueDate = cycle?.dueDate || cycle?.goalDueDate || lastDayOfMonth(startDate);
 
   if (dueDate < startDate) {
-    dueDate = addDays(startDate, 29);
-  }
-
-  const cycleLength = Math.max(1, daysBetween(startDate, dueDate) + 1);
-  while (date > dueDate) {
-    startDate = addDays(dueDate, 1);
-    dueDate = addDays(startDate, cycleLength - 1);
+    dueDate = startDate;
   }
 
   return {
-    target,
+    id: cycle?.id || `cycle-${startDate}-${index + 1}`,
     startDate,
     dueDate,
-    daysLeft: daysUntil(dueDate, date) + 1,
-    cycleLength
+    target: Number(cycle?.target ?? cycle?.monthlyNetGoal ?? 0) || 0
+  };
+}
+
+export function normalizeGoalSettings(settings, date = todayISO()) {
+  const storedCycles = Array.isArray(settings.goalCycles) && settings.goalCycles.length
+    ? settings.goalCycles
+    : [{
+      id: settings.activeGoalCycleId || "cycle-initial",
+      startDate: settings.goalCycleStart || firstDayOfMonth(date),
+      dueDate: settings.goalDueDate || lastDayOfMonth(date),
+      target: Number(settings.monthlyNetGoal || 0)
+    }];
+
+  const goalCycles = storedCycles
+    .map((cycle, index) => sanitizeCycle(cycle, index, date))
+    .sort(sortCycles);
+  const activeGoalCycleId = goalCycles.some((cycle) => cycle.id === settings.activeGoalCycleId)
+    ? settings.activeGoalCycleId
+    : goalCycles[goalCycles.length - 1].id;
+  const activeGoalCycle = goalCycles.find((cycle) => cycle.id === activeGoalCycleId) || goalCycles[goalCycles.length - 1];
+
+  return {
+    ...settings,
+    monthlyNetGoal: activeGoalCycle.target,
+    goalCycleStart: activeGoalCycle.startDate,
+    goalDueDate: activeGoalCycle.dueDate,
+    goalCycles,
+    activeGoalCycleId
+  };
+}
+
+export function getGoalCycles(settings, date = todayISO()) {
+  return normalizeGoalSettings(settings, date).goalCycles;
+}
+
+export function getGoalCycle(settings, date = todayISO()) {
+  const normalizedSettings = normalizeGoalSettings(settings, date);
+  const cycle = normalizedSettings.goalCycles.find((item) => item.id === normalizedSettings.activeGoalCycleId)
+    || normalizedSettings.goalCycles[normalizedSettings.goalCycles.length - 1];
+  const cycleLength = Math.max(1, daysBetween(cycle.startDate, cycle.dueDate) + 1);
+  const isFinished = date > cycle.dueDate;
+
+  return {
+    ...cycle,
+    daysLeft: isFinished ? 0 : daysUntil(cycle.dueDate, date) + 1,
+    cycleLength,
+    isFinished
   };
 }
 
